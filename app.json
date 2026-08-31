@@ -1,0 +1,53 @@
+{
+  "expo": {
+    "name": "prism",
+    "slug": "prism",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "icon": "./assets/icon.png",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "app.prism.rn",
+      "icon": {
+        "light": "./assets/icon.png",
+        "dark": "./assets/icon-dark.png",
+        "tinted": "./assets/icon-tinted.png"
+      },
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "CADisableMinimumFrameDurationOnPhone": true
+      }
+    },
+    "android": {
+      "package": "app.prism.rn",
+      "permissions": ["CAMERA", "RECORD_AUDIO", "VIBRATE"],
+      "edgeToEdgeEnabled": true,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon-foreground.png",
+        "monochromeImage": "./assets/icon-foreground.png",
+        "backgroundColor": "#0F766E"
+      }
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Prism needs the camera to read incoming QR frames.",
+          "microphonePermission": "Prism needs the microphone for the audio channel (phase 2).",
+          "recordAudioAndroid": true
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#F8FAFC",
+          "dark": { "backgroundColor": "#0F172A" },
+          "image": "./assets/icon-foreground.png",
+          "imageWidth": 160
+        }
+      ]
+    ]
+  }
+}

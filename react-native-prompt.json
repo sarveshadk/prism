@@ -1,0 +1,167 @@
+{
+  "project_name": "AirLink (React Native port)",
+  "tagline": "Infrastructure-free file transfer, screen to camera, speaker to mic — native app.",
+  "task": "Rebuild the AirLink web prototype (github.com/sarveshadk/airlink, live at airlinkk.vercel.app) as a cross-platform React Native app (iOS + Android) that implements the identical wire protocol, so a phone running this app can send to or receive from the existing web app with zero changes to the frame format.",
+  "reference": {
+    "source_repo": "https://github.com/sarveshadk/airlink",
+    "live_docs": "https://airlinkk.vercel.app/docs",
+    "protocol_version_target": "match web prototype, protocol version byte 1 (high nibble of byte offset 1)",
+    "license": "MIT (match source repo)"
+  },
+  "core_concept": "Sender splits a file into fixed-size chunks, wraps each in a 16-byte header, base45-encodes the frame, and renders it as a repeating QR carousel (or modulates it as audio). Receiver watches/listens continuously, validates every frame against its checksums, and reassembles the file — discarding duplicates across passes. No pairing, no acknowledgement, no back-channel; the receiver can join mid-transmission or drop and rejoin.",
+  "protocol_spec": {
+    "frame_header": {
+      "total_bytes": 16,
+      "byte_order": "little-endian",
+      "fields": [
+        { "offset": 0, "size": 1, "field": "magic", "value": "0xA1", "notes": "cheap noise rejection, tested first" },
+        { "offset": 1, "size": 1, "field": "version_type", "notes": "high nibble = protocol version, low nibble = frame type" },
+        { "offset": 2, "size": 2, "field": "transferId", "notes": "distinguishes concurrent or looped transfers" },
+        { "offset": 4, "size": 2, "field": "chunkIndex", "notes": "0-based index of this chunk" },
+        { "offset": 6, "size": 2, "field": "chunkCount", "notes": "total chunks in the transfer" },
+        { "offset": 8, "size": 2, "field": "payloadLen", "notes": "length of the payload that follows" },
+        { "offset": 10, "size": 1, "field": "passIndex", "notes": "sender's sweep number, mod 256 — makes per-pass loss measurable" },
+        { "offset": 11, "size": 4, "field": "payloadCrc32", "notes": "CRC-32 over the payload" },
+        { "offset": 15, "size": 1, "field": "headerCrc8", "notes": "CRC-8 over bytes 0-14 — header must be trusted before any field is acted on" }
+      ]
+    },
+    "encoding": {
+      "scheme": "base45",
+      "standard": "RFC 9285",
+      "rationale": "QR alphanumeric mode packs 5.5 bits/char across 45 symbols; base64 needs lowercase which forces 8-bit byte mode. Base45 carries ~29% more payload per QR symbol at equal CPU cost.",
+      "comparison_table": [
+        { "encoding": "base64", "chars_per_byte": 1.333, "bits_per_char": "8.0 (byte mode)", "bits_per_payload_byte": 10.67 },
+        { "encoding": "base45", "chars_per_byte": 1.5, "bits_per_char": "5.5 (alphanumeric)", "bits_per_payload_byte": 8.25 }
+      ]
+    },
+    "chunking": {
+      "default_chunk_size_bytes": 1500,
+      "configurable": true,
+      "recommended_phone_to_phone_range_bytes": "512-1024",
+      "goodput_model": "G(s) = (s / (s + 16)) * s * fps * P_decode(s)",
+      "notes": "Header ratio rises with chunk size while P_decode falls with symbol density, so goodput peaks at an interior value. App should expose this as a live-measured curve via the Bench screen, and warn when the current chunk size implies a QR version too dense for typical arm's-length phone cameras."
+    },
+    "qr_channel": {
+      "error_correction_level": "L",
+      "rationale": "Higher EC levels defend against partial symbol damage (paper/ink failure mode). On a screen the failure mode is whole-symbol erasure — the code is located or it isn't — so the carousel's repetition recovers erasures more cheaply than a higher EC level's constant capacity tax. Level H carries ~44% of L's capacity at the same QR version.",
+      "configurable_ec_level": true
+    },
+    "audio_channel": {
+      "status": "stretch goal / phase 2",
+      "approach": "data-over-sound, equivalent to the web prototype's ggwave-based channel",
+      "notes": "No official ggwave React Native binding exists at time of writing. Options: (a) a native module wrapping the ggwave C library for iOS/Android, (b) a WebView bridge loading ggwave.js as a fallback, (c) custom FSK/audio-FFT implementation. Treat as separate milestone from the QR channel; do not block QR-channel completion on this."
+    },
+    "retry_strategy": {
+      "mode": "carousel",
+      "description": "Sender cycles through all unacknowledged chunks repeatedly until every chunk is acknowledged or a retry budget expires. Receiver collects opportunistically across passes and discards duplicates.",
+      "back_channel": "none — required for the offline/no-pairing property",
+      "send_order": "selectable: sequential or shuffled",
+      "shuffle_seed": "(transferId, passIndex) — deterministic and reproducible from values already present in the log, no separate permutation needs to be recorded",
+      "shuffle_rationale": "A strictly sequential carousel can alias against a periodic receiver blind spot, starving the same chunk indices indefinitely. Per-pass shuffling breaks that lock-in."
+    },
+    "decode_rejection_reasons": {
+      "order": "cheapest-first",
+      "reasons": [
+        { "reason": "too-short", "meaning": "fewer bytes than a header" },
+        { "reason": "bad-magic", "meaning": "not an AirLink frame — rejects 255/256 of random data" },
+        { "reason": "bad-header-crc", "meaning": "header fields cannot be trusted" },
+        { "reason": "unsupported-version", "meaning": "protocol version this build cannot parse" },
+        { "reason": "unknown-type", "meaning": "frame type not in this version's set" },
+        { "reason": "truncated-payload", "meaning": "fewer payload bytes than payloadLen promised" },
+        { "reason": "bad-payload-crc", "meaning": "payload corrupted in transit — runs last, checked over up to 1.5KB" },
+        { "reason": "inconsistent-header", "meaning": "fields disagree with the locked transfer" }
+      ],
+      "notes": "Track counts per category separately — the distribution diagnoses the channel (many bad-magic = camera seeing noise; many bad-payload-crc = frames arriving but corrupted, pointing at distance/gain/frame-rate). Also separate the receiver's own processing losses (camera frames the decoder couldn't keep up with) from true channel losses (frames never decodable)."
+    }
+  },
+  "tech_stack": {
+    "framework": "React Native via Expo (managed workflow) for camera/mic/file-system access without native build friction",
+    "camera_and_qr_scan": "expo-camera CameraView with built-in barcode scanning (native ML Kit / AVFoundation decode) — a deliberate upgrade over the web prototype's canvas+jsQR loop",
+    "qr_generation": "react-native-qrcode-svg (supports ecl prop for L/M/Q/H, needed for the EC-level control)",
+    "file_picking": "expo-document-picker",
+    "file_system": "expo-file-system (chunked reads for send, incremental writes for reassembly)",
+    "save_share_received_file": "expo-sharing / expo-file-system",
+    "checksums": "crc-32 npm package for CRC-32; small hand-rolled CRC-8 (no package needed, ~10 lines)",
+    "base45": "base45 npm package, or hand-rolled per RFC 9285 if the package is unmaintained",
+    "state_management": "zustand for transfer state machine (idle / sending / receiving / complete / error)",
+    "navigation": "react-navigation bottom tabs: Send, Receive, Bench, Docs",
+    "charts_for_live_counters": "victory-native, or hand-rolled RN components if a lighter footprint is preferred"
+  },
+  "screens": [
+    {
+      "name": "Home",
+      "purpose": "Landing screen — explain the concept in one line, route to Send/Receive/Bench, show protocol version and app status.",
+      "components": ["short concept blurb", "Send button", "Receive button", "Bench button", "link to Docs"]
+    },
+    {
+      "name": "Send",
+      "purpose": "Pick a file and stream it as a QR carousel (or audio, once phase 2 lands).",
+      "components": [
+        "file picker (expo-document-picker)",
+        "channel selector: QR / Audio",
+        "chunk size control (slider or stepper, default 1500B, shows resulting QR version)",
+        "frame rate control (fps)",
+        "EC level selector (L/M/Q/H, default L)",
+        "send-order toggle: sequential / shuffled",
+        "transferId display (auto-generated)",
+        "Start / Stop transfer button",
+        "live QR carousel view",
+        "live counters: frames sent, passes completed, wire rate (includes headers + repeats), per-frame render cost, current QR version and module geometry"
+      ]
+    },
+    {
+      "name": "Receive",
+      "purpose": "Continuously scan incoming frames, validate, reassemble, and verify the file.",
+      "components": [
+        "live camera view with scan overlay",
+        "chunk grid visualization (filled = received, one cell per chunkIndex) — primary diagnostic for uniform vs. periodic loss",
+        "live counters: chunks received, goodput (file bytes/sec, excludes headers+duplicates), duplicate count, per-pass loss rate, camera frame count, symbol miss rate, mean decode time, capture mode",
+        "decode-rejection breakdown by the 8 categories",
+        "checksum-verified completion state",
+        "Save / Share button once file is fully reassembled and verified"
+      ]
+    },
+    {
+      "name": "Bench",
+      "purpose": "Benchmark harness — run controlled transfers and record goodput vs. chunk size / frame rate / EC level, matching the web prototype's Bench tool.",
+      "components": [
+        "parameter sweep controls",
+        "run history with recorded metrics",
+        "export log (JSON) for later analysis",
+        "goodput-vs-chunk-size chart"
+      ]
+    },
+    {
+      "name": "Docs",
+      "purpose": "In-app reference mirroring the protocol spec above, so field testers don't need connectivity to look up the frame format.",
+      "components": ["frame format table", "retry strategy explanation", "decode rejection reference", "static, offline-readable"]
+    }
+  ],
+  "permissions_required": ["camera", "microphone (once audio channel ships)", "media library / file system access for saving received files"],
+  "non_functional_requirements": [
+    "Fully offline at runtime: zero network calls once the app is installed — no server, no pairing service, matching the 'no infrastructure' spirit of the original",
+    "No secure-context/HTTPS caveat: unlike the web version, native camera APIs need no certificate workaround — call this out explicitly as a platform advantage",
+    "Correctness and instrumentation prioritized over visual polish, matching the source project's stated priorities",
+    "All 8 decode-rejection categories implemented and tested in the documented cheapest-first order",
+    "Shuffle mode must be deterministically reproducible from (transferId, passIndex) alone",
+    "Wire-format compatibility: a frame produced by this app's Send screen must be decodable by the existing web app's Receive page, and vice versa"
+  ],
+  "differences_from_web_version": [
+    "Native barcode scanning (ML Kit / AVFoundation) replaces the canvas+jsQR polling loop — should be faster and more reliable, but decode-timing instrumentation should still be captured for a fair goodput comparison against the web numbers",
+    "No HTTPS/secure-context requirement for camera access",
+    "Potential access to raw camera frame processors (react-native-vision-camera) if the built-in barcode scanner's decode latency or configurability proves insufficient — treat as a fallback, not the default path"
+  ],
+  "roadmap_after_v1": [
+    "Audio/ultrasonic channel (see audio_channel above)",
+    "Adaptive chunk sizing driven by live measured goodput",
+    "Optional parity frames for tail-loss recovery (frame types are already reserved for this in the header's type nibble)",
+    "Cross-device Bench comparisons against the deployed web app for the research paper's benchmark section"
+  ],
+  "acceptance_criteria": [
+    "A file sent from this app's Send screen is received correctly by another instance of this app's Receive screen with no network path between them",
+    "A file sent from the existing web app (airlinkk.vercel.app/send) is received correctly by this app's Receive screen, proving wire compatibility",
+    "Chunk size, frame rate, EC level, and send order are all configurable at runtime and reflected in the live counters",
+    "The chunk grid and decode-rejection breakdown are visible and update in real time during a receive session",
+    "Checksum verification gates the Save/Share action — no partially-corrupt file can be saved as 'complete'"
+  ]
+}
