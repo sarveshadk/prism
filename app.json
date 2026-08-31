@@ -1,19 +1,19 @@
 {
   "expo": {
-    "name": "prism",
+    "name": "Prism",
     "slug": "prism",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "icon": "./assets/icon.png",
+    "icon": "./assets/prism.svg",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "app.prism.rn",
       "icon": {
-        "light": "./assets/icon.png",
-        "dark": "./assets/icon-dark.png",
-        "tinted": "./assets/icon-tinted.png"
+        "light": "./assets/prism.svg",
+        "dark": "./assets/prism.svg",
+        "tinted": "./assets/prism.svg"  
       },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
@@ -22,12 +22,19 @@
     },
     "android": {
       "package": "app.prism.rn",
-      "permissions": ["CAMERA", "RECORD_AUDIO", "VIBRATE"],
+      "versionCode": 1,
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "VIBRATE",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ],
       "edgeToEdgeEnabled": true,
       "adaptiveIcon": {
-        "foregroundImage": "./assets/icon-foreground.png",
-        "monochromeImage": "./assets/icon-foreground.png",
-        "backgroundColor": "#0F766E"
+        "foregroundImage": "./assets/prism.svg",
+        "monochromeImage": "./assets/prism.svg",
+        "backgroundColor": "#FF4B3E"
       }
     },
     "plugins": [
@@ -42,12 +49,19 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#F8FAFC",
-          "dark": { "backgroundColor": "#0F172A" },
-          "image": "./assets/icon-foreground.png",
+          "backgroundColor": "#F7F6F1",
+          "dark": {
+            "backgroundColor": "#0F0F0F"
+          },
+          "image": "./assets/prism.svg",
           "imageWidth": 160
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "f8153606-8e53-484c-9e5a-06295d84ea22"
+      }
+    }
   }
 }

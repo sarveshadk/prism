@@ -21,6 +21,7 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon, type IconName } from './icon';
+import { useStore } from './store';
 import {
   CAN_BLUR,
   PRESS_TRANSITION,
@@ -403,7 +404,7 @@ export function ThemeToggle({
 }) {
   const c = useTheme();
   const isDark = dark ?? c.scheme === 'dark';
-  const { patch } = require('./store').useStore();
+  const patch = useStore((s) => s.patch);
 
   const toggle = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);

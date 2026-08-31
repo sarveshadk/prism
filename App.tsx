@@ -2,8 +2,9 @@ import { type BottomTabBarProps, createBottomTabNavigator } from '@react-navigat
 import { DarkTheme, DefaultTheme, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import * as Haptics from 'expo-haptics';
+import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -23,7 +24,7 @@ const Stack = createNativeStackNavigator();
 function HomeStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false, animation: 'fade' }}>
-      <Stack.Screen name="HomeScreen" component={Home} />
+      <Stack.Screen name="Home" component={Home} />
       <Stack.Screen name="Send" component={Send} />
       <Stack.Screen name="Receive" component={Receive} />
       <Stack.Screen name="Bench" component={Bench} />
@@ -130,6 +131,10 @@ export default function App() {
   const c = useTheme();
   const base = c.scheme === 'dark' ? DarkTheme : DefaultTheme;
   const [booted, setBooted] = useState(false);
+
+  useEffect(() => {
+    SplashScreen.hideAsync().catch(() => {});
+  }, []);
 
   return (
     <SafeAreaProvider>

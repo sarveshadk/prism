@@ -286,7 +286,27 @@ export default function Receive({ navigation }: any) {
         title="Receive"
         onBack={() => navigation?.goBack?.() || navigation?.navigate?.('Home')}
         right={
-          <View style={{ flexDirection: 'row', gap: 6 }}>
+          <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                navigation?.navigate?.('Send');
+              }}
+              hitSlop={8}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 4,
+                paddingHorizontal: 10,
+                paddingVertical: 5,
+                borderRadius: radius.pill,
+                backgroundColor: c.elevated,
+              }}
+            >
+              <Icon name="file" size={14} color={c.coral} />
+              <Text style={[type.footnote, { color: c.coral, fontWeight: '600' }]}>Send</Text>
+            </Pressable>
+
             <Pressable
               onPress={() => setMode('qr')}
               style={{
@@ -554,37 +574,109 @@ export default function Receive({ navigation }: any) {
 
 function Grid({ mask, chunkCount }: { mask: Uint8Array | null; chunkCount: number }) {
   const c = useTheme();
-  if (!mask) return null;
-  const count = Math.min(chunkCount, 48);
+  if (!mask || chunkCount === 0) return null;
 
-  return (
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
-      {Array.from({ length: count }).map((_, i) => {
-        const received = mask[i] === 1;
-        return (
-          <View
-            key={i}
-            style={{
-              width: 18,
-              height: 18,
-              borderRadius: 4,
-              backgroundColor: received ? c.coral : c.elevated,
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <Text
+  const received = mask.reduce((n, v) => n + v, 0);
+
+  // For very large transfers (>500 chunks), show a compact progress summary bar
+  // instead of rendering hundreds of individual cells which would hurt performance
+  if (chunkCount > 500) {
+    const SEGMENTS = 50;
+    const perSeg = chunkCount / SEGMENTS;
+    return (
+      <View style={{ gap: 6, marginTop: 4 }}>
+        <View style={{ flexDirection: 'row', gap: 1.5 }}>
+          {Array.from({ length: SEGMENTS }).map((_, i) => {
+            const segStart = Math.floor(i * perSeg);
+            const segEnd = Math.min(Math.floor((i + 1) * perSeg), chunkCount);
+            let segReceived = 0;
+            for (let j = segStart; j < segEnd; j++) {
+              if (mask[j] === 1) segReceived++;
+            }
+            const fill = segReceived / (segEnd - segStart);
+            return (
+              <View
+                key={i}
+                style={{
+                  flex: 1,
+                  height: 8,
+                  borderRadius: 2,
+                  backgroundColor: fill >= 1
+                    ? c.coral
+                    : fill > 0
+                      ? `rgba(255,75,62,${0.25 + fill * 0.5})`
+                      : c.elevated,
+                }}
+              />
+            );
+          })}
+        </View>
+        <Text style={{ fontSize: 10, color: c.textMuted, textAlign: 'center' }}>
+          {received} / {chunkCount} chunks received
+        </Text>
+      </View>
+    );
+  }
+
+  // For moderate transfers (>120 chunks), use smaller cells with no text labels
+  if (chunkCount > 120) {
+    const cellSize = chunkCount > 300 ? 6 : 10;
+    return (
+      <View style={{ gap: 6, marginTop: 4 }}>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 2 }}>
+          {Array.from({ length: chunkCount }).map((_, i) => (
+            <View
+              key={i}
               style={{
-                fontSize: 8,
-                color: received ? '#FFFFFF' : c.textMuted,
-                fontWeight: '500',
+                width: cellSize,
+                height: cellSize,
+                borderRadius: cellSize > 6 ? 2 : 1,
+                backgroundColor: mask[i] === 1 ? c.coral : c.elevated,
+              }}
+            />
+          ))}
+        </View>
+        <Text style={{ fontSize: 10, color: c.textMuted, textAlign: 'center' }}>
+          {received} / {chunkCount} chunks received
+        </Text>
+      </View>
+    );
+  }
+
+  // For small transfers (<=120 chunks), show individual labeled cells
+  return (
+    <View style={{ gap: 6, marginTop: 4 }}>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
+        {Array.from({ length: chunkCount }).map((_, i) => {
+          const got = mask[i] === 1;
+          return (
+            <View
+              key={i}
+              style={{
+                width: 18,
+                height: 18,
+                borderRadius: 4,
+                backgroundColor: got ? c.coral : c.elevated,
+                alignItems: 'center',
+                justifyContent: 'center',
               }}
             >
-              {i + 1}
-            </Text>
-          </View>
-        );
-      })}
+              <Text
+                style={{
+                  fontSize: 8,
+                  color: got ? '#FFFFFF' : c.textMuted,
+                  fontWeight: '500',
+                }}
+              >
+                {i + 1}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+      <Text style={{ fontSize: 10, color: c.textMuted, textAlign: 'center' }}>
+        {received} / {chunkCount} chunks received
+      </Text>
     </View>
   );
 }

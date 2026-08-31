@@ -52,7 +52,7 @@ const ECLS = ['L', 'M', 'Q', 'H'] as const;
 export default function Send({ navigation }: any) {
   const c = useTheme();
   const { width } = useWindowDimensions();
-  const { chunkSize, fps, ecl, shuffled, channel, sendState, patch } = useStore();
+  const { chunkSize, fps, ecl, shuffled, channel, sendState, patch, addRun } = useStore();
   const [file, setFile] = useState<PickedFile | null>(null);
   const [picking, setPicking] = useState(false);
   const [transferId, setTransferId] = useState(0);
@@ -60,6 +60,7 @@ export default function Send({ navigation }: any) {
   const [stats, setStats] = useState({ sent: 0, pass: 0, encodeMs: 0, wireBps: 0, currentChunk: 0 });
   const [selectedChannel, setSelectedChannel] = useState<'qr' | 'acoustic'>('qr');
   const [showParams, setShowParams] = useState(false);
+  const [done, setDone] = useState(false);
 
   const cur = useRef({
     order: [] as number[],
@@ -127,6 +128,7 @@ export default function Send({ navigation }: any) {
 
   const start = () => {
     if (!canStart) return;
+    setDone(false);
     const id = newTransferId();
     setTransferId(id);
     cur.current = {
@@ -146,13 +148,45 @@ export default function Send({ navigation }: any) {
   const stop = () => {
     patch({ sendState: 'idle' });
     setFrame('');
+    setDone(true);
+  };
+
+  const logAndFinish = () => {
+    if (file) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      const elapsed = cur.current.t0 ? (now() - cur.current.t0) / 1000 : 0;
+      addRun({
+        id: `send-${transferId.toString(16)}-${Date.now()}`,
+        at: Date.now(),
+        kind: 'send',
+        chunkSize,
+        fps,
+        ecl,
+        shuffled,
+        qrVersion: geo.version,
+        chunkCount: chunks.length,
+        fileBytes: file.bytes.length,
+        seconds: elapsed,
+        goodputBps: elapsed > 0 ? file.bytes.length / elapsed : 0,
+        complete: true,
+        encodeMsPerFrame: stats.encodeMs,
+        ceilingBps: stats.wireBps,
+      });
+    }
+    setDone(false);
+    setFile(null);
+    setStats({ sent: 0, pass: 0, encodeMs: 0, wireBps: 0, currentChunk: 0 });
+    navigation?.goBack?.() || navigation?.navigate?.('Home');
   };
 
   const choose = async () => {
     setPicking(true);
     try {
       const f = await pickFile();
-      if (f) setFile(f);
+      if (f) {
+        setFile(f);
+        setDone(false);
+      }
     } finally {
       setPicking(false);
     }
@@ -162,22 +196,29 @@ export default function Send({ navigation }: any) {
 
   return (
     <Screen>
-      {/* Header */}
+      {/* Header — Receive quick-switch replaces old bench icon */}
       <Header
         title="Send"
         onBack={() => navigation?.goBack?.() || navigation?.navigate?.('Home')}
         right={
           <Pressable
-            onPress={() => navigation?.navigate?.('Bench')}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              navigation?.navigate?.('Receive');
+            }}
             hitSlop={8}
-            style={{ padding: 4 }}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 4,
+              paddingHorizontal: 10,
+              paddingVertical: 5,
+              borderRadius: radius.pill,
+              backgroundColor: c.elevated,
+            }}
           >
-            <Svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-              <Line x1="18" y1="20" x2="18" y2="10" stroke={c.coral} strokeWidth="2" strokeLinecap="round" />
-              <Line x1="12" y1="20" x2="12" y2="4" stroke={c.coral} strokeWidth="2" strokeLinecap="round" />
-              <Line x1="6" y1="20" x2="6" y2="14" stroke={c.coral} strokeWidth="2" strokeLinecap="round" />
-              <Line x1="2" y1="20" x2="22" y2="20" stroke={c.coral} strokeWidth="2" strokeLinecap="round" />
-            </Svg>
+            <Icon name="camera" size={14} color={c.coral} />
+            <Text style={[type.footnote, { color: c.coral, fontWeight: '600' }]}>Receive</Text>
           </Pressable>
         }
       />
@@ -248,12 +289,18 @@ export default function Send({ navigation }: any) {
                   <Text style={[type.overline, { color: c.coral }]}>
                     {sending
                       ? `CHUNK ${stats.currentChunk} / ${chunks.length}`
-                      : file
-                        ? `${chunks.length} CHUNKS READY`
-                        : 'NO FILE SELECTED'}
+                      : done
+                        ? 'TRANSFER COMPLETE'
+                        : file
+                          ? `${chunks.length} CHUNKS READY`
+                          : 'NO FILE SELECTED'}
                   </Text>
                   <Text style={[type.caption, { color: c.textMuted, marginTop: 2 }]}>
-                    {sending ? `Hold steady · ${fps} fps` : 'Choose a file below to begin'}
+                    {sending
+                      ? `Hold steady · ${fps} fps`
+                      : done
+                        ? 'Tap Done to save the log'
+                        : 'Choose a file below to begin'}
                   </Text>
                 </View>
               </>
@@ -382,14 +429,18 @@ export default function Send({ navigation }: any) {
               width: 7,
               height: 7,
               borderRadius: 4,
-              backgroundColor: sending ? c.success : c.textMuted,
+              backgroundColor: sending ? c.success : done ? c.coral : c.textMuted,
             }}
           />
           <Text style={[type.footnote, { color: c.textSub }]}>
-            {sending ? 'Receiver locked ·' : 'Status ·'}
+            {sending ? 'Receiver locked ·' : done ? 'Finished ·' : 'Status ·'}
           </Text>
           <Text style={[type.footnote, { color: c.text, fontWeight: '600' }]}>
-            {sending ? `Transfer 0x${transferId.toString(16)}` : 'Standby'}
+            {sending
+              ? `Transfer 0x${transferId.toString(16)}`
+              : done
+                ? `${file?.name ?? 'File'} sent`
+                : 'Standby'}
           </Text>
           {sending && (
             <View
@@ -407,10 +458,12 @@ export default function Send({ navigation }: any) {
         </Card>
       </View>
 
-      {/* Primary Action Button */}
-      <View style={{ paddingHorizontal: space.lg }}>
+      {/* Primary Action Buttons */}
+      <View style={{ paddingHorizontal: space.lg, gap: space.sm }}>
         {sending ? (
           <Btn label="Pause Transfer" tone="warm" icon="pause" onPress={stop} />
+        ) : done ? (
+          <Btn label="Done — Save Log" icon="check" onPress={logAndFinish} />
         ) : (
           <Btn
             label="Start Carousel"

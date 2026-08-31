@@ -5,7 +5,7 @@ import type { Ecl, RejectReason } from './protocol';
 export type Run = {
   id: string;
   at: number;
-  kind: 'receive' | 'encode-sweep';
+  kind: 'send' | 'receive' | 'encode-sweep';
   chunkSize: number;
   fps: number;
   ecl: Ecl;

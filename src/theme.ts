@@ -239,16 +239,7 @@ export function useTheme(): Palette {
   return useStore((s) => s.themePref) === 'Dark' ? dark : light;
 }
 
-export const THEME_TRANSITION: CSSTransitionProperties = {
-  transitionProperty: ['backgroundColor', 'borderColor'],
-  transitionDuration: '280ms',
-  transitionTimingFunction: 'ease-in-out',
-};
-
-export const PRESS_TRANSITION: CSSTransitionProperties = {
-  transitionProperty: ['transform', 'opacity'],
-  transitionDuration: '120ms',
-  transitionTimingFunction: cubicBezier(0.23, 1, 0.32, 1),
-};
+export const THEME_TRANSITION = {};
+export const PRESS_TRANSITION = {};
 
 export const tabular = { fontVariant: ['tabular-nums' as const] };

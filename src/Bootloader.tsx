@@ -75,13 +75,16 @@ export function Bootloader({ onFinish }: { onFinish: () => void }) {
       withTiming(0, {
         duration: 400,
         easing: Easing.in(Easing.cubic),
-      }, (finished) => {
-        if (finished) {
-          runOnJS(dismiss)();
-        }
       })
     );
-  }, []);
+
+    // Guaranteed unmount timer on JS thread
+    const timer = setTimeout(() => {
+      onFinish();
+    }, 2450);
+
+    return () => clearTimeout(timer);
+  }, [onFinish]);
 
   const wordmarkStyle = useAnimatedStyle(() => ({
     opacity: wordmarkOpacity.value,
