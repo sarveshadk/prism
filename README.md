@@ -1,217 +1,117 @@
 <div align="center">
-  <img src="assets/wordmark.png" alt="Prism" width="420"/>
-
-  <p><b>Infrastructure-free file transfer, screen to camera.</b></p>
-
-  <p>
-    <img src="https://img.shields.io/badge/platform-React%20Native%20(Expo)-000000.svg" alt="platform"/>
-    <img src="https://img.shields.io/badge/license-MIT-red.svg" alt="license"/>
-    <img src="https://img.shields.io/badge/protocol-v1-1f1f1f.svg" alt="protocol version"/>
-  </p>
+  <img src="assets/wordmark.png" alt="Prism" width="380"/>
 </div>
 
-<br/>
+Prism moves files from one device to another using just a screen and a camera. The sender splits the file into chunks, wraps each one in a small header, encodes it as base45, and displays it as a rotating QR carousel. The receiver points its camera at the screen, checks each frame against its checksum, and reassembles the file as pieces come in, throwing out anything it's already seen.
 
-Prism sends files between two devices with **no pairing, no acknowledgement, no back-channel, and
-no network calls at all.** A sender splits a file into chunks, wraps each in a 16-byte header,
-base45-encodes the frame, and renders it as a repeating QR carousel. A receiver watches the screen
-continuously, validates every frame against its checksums, and reassembles the file — discarding
-duplicates as they arrive.
+There's no pairing step and no acknowledgement sent back to the sender, so a receiver can join partway through a transfer, look away, and pick back up later without anything breaking.
 
-Because the transfer is one-way and stateless, a receiver can join mid-transmission, drop out, and
-rejoin at any point without breaking anything.
+## Contents
 
-This is the React Native port of [sarveshadk/airlink](https://github.com/sarveshadk/airlink). It
-shares the exact same wire format, so this app and the web app at
-[airlinkk.vercel.app](https://airlinkk.vercel.app) interoperate with each other in both
-directions.
-
-<br/>
-
-## Table of contents
-
-- [Why](#why)
-- [Features](#features)
-- [Getting started](#getting-started)
-- [Project layout](#project-layout)
-- [Wire format](#wire-format)
-- [Filenames](#filenames)
-- [Verifying against the web app](#verifying-against-the-web-app)
-- [SDK state](#sdk-state)
-- [Deliberate simplifications](#deliberate-simplifications)
-- [What this port changes](#what-this-port-changes)
-- [Testing](#testing)
-- [Roadmap](#roadmap)
-- [Contributing](#contributing)
-- [License](#license)
-
-<br/>
-
-## Why
-
-Most "offline" file-sharing options quietly depend on infrastructure — a shared Wi-Fi network, a
-Bluetooth pairing handshake, a hotspot, a cable. Prism doesn't. It only needs a screen and a
-camera, so it works between any two devices that can display and read a QR code, regardless of
-network conditions, OS, or whether the two devices trust each other at the network layer.
-
-## Features
-
-- **Zero infrastructure** — no Wi-Fi, Bluetooth, hotspot, or cable required.
-- **No handshake** — the sender doesn't know or care whether a receiver is watching.
-- **Resilient by design** — a receiver can join late, look away, and come back without losing
-  progress; duplicate and out-of-order frames are handled for free by the checksum + chunk model.
-- **Cross-platform interoperability** — the wire format is shared with the web prototype, so a
-  phone and a browser can send to each other.
-- **Self-describing filenames** — an optional META frame carries the original filename across, with
-  a safe fallback when it's missing.
-- **Defensive by default** — incoming filenames are treated as hostile input and sanitized at the
-  single point where they become a real path.
-- **Diagnosable losses** — every rejection reason is counted separately on the Receive screen, so
-  channel quality can be read off the failure distribution instead of guessed at.
+- Getting started
+- Project layout
+- Wire format
+- Filenames
+- Checking compatibility with the web app
+- SDK state
+- Simplifications made on purpose
+- What changed in this port
+- Testing
+- Roadmap
+- Contributing
+- License
 
 ## Getting started
 
-### Prerequisites
-
-- Node.js and npm
-- [Expo CLI](https://docs.expo.dev/get-started/installation/) / the Expo Go app, or a development
-  build for native modules
-- Two devices (or a device + simulator with camera passthrough) to test a real transfer
-
-### Install
+You'll need Node and npm, plus the Expo CLI or Expo Go (or a dev build if you need native modules). To actually test a transfer you'll want two devices, or a device and a simulator with camera passthrough.
 
 ```bash
-npm install          # the tree currently on disk is half-upgraded — see "SDK state" below
-npm test              # protocol self-check, no device needed
+npm install       # node_modules on disk is currently a mix of SDK versions, see "SDK state" below
+npm test          # runs the protocol self check, no device needed
 npx expo start
 ```
 
-### Run a transfer
-
-Open the app on two devices. Choose **Send** on one and **Receive** on the other, then point the
-receiving device's camera at the sending device's screen.
+Open the app on two devices, pick Send on one and Receive on the other, and point the receiving camera at the sending screen.
 
 ## Project layout
 
 | File | What |
 | --- | --- |
-| `src/protocol.ts` | The wire format. CRC-8/CRC-32, base45, frame encode/decode, carousel order, QR geometry. No Expo imports — runs under plain Node. |
-| `src/protocol.test.ts` | The self-check: RFC 9285 vectors, CRC check values, exact header byte layout, all 8 rejection categories, shuffle determinism. |
-| `src/fileio.ts` | The only SDK-coupled file: pick, read, write, share. |
-| `src/store.ts` | zustand store: settings, state machine, bench log. |
-| `src/screens/` | Home, Send, Receive, Bench, Docs. |
+| `src/protocol.ts` | The wire format itself: CRC 8/CRC 32, base45, frame encode/decode, carousel ordering, QR geometry. No Expo imports, so it runs under plain Node. |
+| `src/protocol.test.ts` | The self check. RFC 9285 vectors, CRC check values, the exact header byte layout, all eight rejection categories, and shuffle determinism. |
+| `src/fileio.ts` | The one file that's coupled to the SDK: picking, reading, writing, and sharing files. |
+| `src/store.ts` | A zustand store for settings, the state machine, and the bench log. |
+| `src/screens/` | Home, Send, Receive, Bench, and Docs screens. |
 
-High-frequency counters live in component refs and flush to state at ~5 Hz. Putting them in the
-store would re-render the QR carousel on every camera callback.
+High frequency counters live in component refs and only get flushed to the store around 5 times a second. If they lived in the store directly, the QR carousel would re render on every camera callback.
 
 ## Wire format
 
-A 16-byte, little-endian header precedes the payload. The whole frame is base45-encoded
-([RFC 9285](https://datatracker.ietf.org/doc/html/rfc9285)) so it fits QR alphanumeric mode at 5.5
-bits/char, instead of the 8 bits/char that base64's lowercase characters force.
+Every frame starts with a 16 byte, little endian header, then the payload. The whole thing gets base45 encoded (RFC 9285) so it fits QR alphanumeric mode at 5.5 bits per character instead of the 8 bits per character that base64's lowercase letters force.
 
 | Offset | Length | Field |
 | --- | --- | --- |
 | 0 | 1 | `magic` = `0xA1` |
-| 1 | 1 | `version_type` — high nibble version, low nibble frame type |
+| 1 | 1 | `version_type`, high nibble is the version, low nibble is the frame type |
 | 2 | 2 | `transferId` |
 | 4 | 2 | `chunkIndex` |
 | 6 | 2 | `chunkCount` |
 | 8 | 2 | `payloadLen` |
 | 10 | 1 | `passIndex` (mod 256) |
 | 11 | 4 | `payloadCrc32` |
-| 15 | 1 | `headerCrc8` over bytes 0–14 |
+| 15 | 1 | `headerCrc8`, computed over bytes 0 through 14 |
 
-Protocol version is `1`. Frame type `0` is **DATA** (raw file bytes); type `1` is **META**, whose
-payload is the UTF-8 filename. Types `2`–`15` are reserved for future parity frames.
+Protocol version is 1. Frame type 0 is DATA, the actual file bytes. Type 1 is META, whose payload is just the UTF 8 filename. Types 2 through 15 are reserved for parity frames down the line.
 
-Rejections are checked cheapest-first: `too-short` → `bad-magic` → `bad-header-crc` →
-`unsupported-version` → `unknown-type` → `truncated-payload` → `bad-payload-crc` →
-`inconsistent-header`. The Receive screen counts each of these separately, because the
-distribution across categories is what diagnoses the channel.
+Rejections get checked cheapest first: too short, bad magic, bad header CRC, unsupported version, unknown type, truncated payload, bad payload CRC, inconsistent header. The Receive screen tracks each of these separately, since which ones show up tells you a lot about what's wrong with the channel.
 
 ## Filenames
 
-DATA frames carry no filename, so a plain reassembly has nothing to be named after — that's why it
-lands as `.bin` by default. To fix that, the sender emits one **META** frame at the head of every
-pass, carrying the UTF-8 filename. This costs one frame slot per pass, and means a receiver that
-joins late still learns the filename within a single sweep.
+DATA frames don't carry a filename, so a plain reassembly has nothing to name itself after, which is why you'd otherwise end up with a `.bin` file. To fix that, the sender sends one META frame at the start of every pass with the filename in it. That costs one frame slot per pass, but it also means a receiver joining late still picks up the name within a single sweep.
 
-META is optional in both directions, which is what keeps everything compatible:
+META is optional on both ends, which is what keeps this compatible with the original:
 
-- A sender that emits none — like the web prototype — still transfers correctly; the receiver falls
-  back to `prism-<transferId>.bin`.
-- A receiver that doesn't recognize type `1` counts it under `unknown-type` and loses nothing,
-  since the DATA frames are untouched. Sending to the web app does inflate its `unknown-type`
-  tally by one frame per pass.
+- A sender that never sends one, like the web version, still transfers fine. The receiver just falls back to `prism-<transferId>.bin`.
+- A receiver that doesn't know about type 1 just counts it as unknown type and moves on, since the DATA frames are unaffected. Sending to the web app will bump its unknown type count by one frame per pass, and that's expected.
 
-META rides at `chunkIndex 0`, so **a receiver must branch on frame type before treating a frame as
-a chunk** — otherwise the filename bytes overwrite chunk 0 and silently corrupt the file. This
-ordering is asserted directly in `protocol.test.ts`.
+META always rides at chunkIndex 0, so a receiver has to check the frame type before treating it as a chunk. Otherwise the filename bytes would overwrite chunk 0 and quietly corrupt the file. This is checked directly in `protocol.test.ts`.
 
-The incoming filename is unauthenticated — there's no pairing and no back-channel — so it's treated
-as hostile input. `safeFileName` strips directory separators, control characters, and leading dots,
-and caps the length. It's applied inside `writeToCache`, the single point where a wire name becomes
-a real path, so no call site can bypass it. Path-traversal cases are covered in the tests.
+The filename itself is untrusted, since there's no pairing and nothing verifying who sent it. `safeFileName` strips out directory separators, control characters, and leading dots, and caps the length. It's applied inside `writeToCache`, which is the one place a wire name turns into an actual file path, so there's no way around it. Path traversal is covered in the tests too.
 
-## Verifying against the web app
+## Checking compatibility with the web app
 
-The JSON spec names both of the following fields but not their parameters, so they're pinned here
-to the standard choices. Both are one-line changes if the web prototype ever disagrees:
+The spec names these two fields but doesn't pin down their exact parameters, so they're set to the standard defaults here. Both are a one line change if the web version turns out to disagree:
 
-1. **CRC-8 polynomial** — `CRC8_POLY` in `src/protocol.ts` is `0x07`, init `0x00`, no reflection, no
-   final XOR (CRC-8/SMBUS, check value `0xF4`). This is the plain "CRC-8."
-2. **Frame type nibble** — DATA is `0`, so byte 1 of every DATA frame this app sends is `0x10`.
-   META is `1` (byte 1 = `0x11`). If the web prototype ever assigns type `1` to something else,
-   `FrameType.META` moves into the reserved range.
+1. CRC 8 polynomial: `CRC8_POLY` in `src/protocol.ts` is `0x07`, init `0x00`, no reflection, no final XOR. That's CRC 8/SMBUS, check value `0xF4`, basically the plain "CRC 8" people usually mean.
+2. Frame type nibble: DATA is 0, so byte 1 of every DATA frame is `0x10`. META is 1, so byte 1 is `0x11`. If the web version ever assigns type 1 to something else, `FrameType.META` just moves into the reserved range.
 
-Everything else in the header is fully pinned by the spec and asserted byte-for-byte in
-`protocol.test.ts`.
+Everything else in the header is fully pinned by the spec and checked byte for byte in `protocol.test.ts`.
 
-The shuffle seed needs no verification — send order is invisible to the receiver, which collects
-frames opportunistically in whatever order they arrive.
+The shuffle seed doesn't need checking against anything, since send order is invisible to the receiver anyway. It just collects frames in whatever order they show up.
 
 ## SDK state
 
-`package.json` targets Expo SDK 54, but `node_modules` on disk is currently a mix: `expo` is
-`54.0.37`, while `expo-camera`, `expo-file-system`, `expo-document-picker`, and `react-native` are
-still SDK 53 versions. Run a clean install before building:
+`package.json` targets Expo SDK 54, but node_modules on disk right now is a mix: expo itself is 54.0.37, while expo-camera, expo-file-system, expo-document-picker, and react-native are still on SDK 53. Do a clean install before building anything:
 
 ```bash
 rm -rf node_modules package-lock.json && npm install && npx expo install --fix
 ```
 
-`src/fileio.ts` is written against SDK 54's synchronous `File` / `Paths` API. If you pin back to
-SDK 53, change that one import to `expo-file-system/legacy`.
+`src/fileio.ts` is written against SDK 54's synchronous File and Paths API. If you're pinning back to SDK 53, the one thing to change is that import to `expo-file-system/legacy`.
 
-## Deliberate simplifications
+## Simplifications made on purpose
 
-Each of these is marked with a `ponytail:` comment at the point it applies in the code.
+- The whole file sits in memory on both ends. That's fine up to tens of megabytes, which is about as much as a QR carousel could ever realistically carry.
+- There's no whole file digest. Every chunk's payload gets CRC 32 checked as it arrives, and Save won't fire until every chunk is accounted for, so a corrupt chunk can't sneak through. But there's no end to end hash over the finished file, since v1 just doesn't have a place to put one.
+- The chunk grid groups cells together once you're past 512 chunks, so a big transfer still shows its loss pattern without trying to render thousands of individual boxes.
+- QR version numbers are exact for error correction level L, the default. M, Q, and H use the standard capacity ratios and get labeled with a "roughly equal to" sign instead of an exact number.
+- There's no audio channel yet. Nobody's built a ggwave binding for React Native, so the Send screen just shows the option and explains that it's not there yet rather than faking it. That's planned for phase two.
 
-- **Whole file in memory** on both ends — fine up to tens of MB; a QR carousel will never realistically
-  carry more than that.
-- **No whole-file digest.** Every chunk's payload CRC-32 is verified on arrival, and Save is gated
-  on a complete set, so a corrupt chunk can never be accepted — but there's no end-to-end hash over
-  the assembled file, since v1 has nowhere to put one.
-- **Chunk grid groups cells** above 512 chunks, so a large transfer still shows its loss pattern
-  instead of rendering thousands of individual views.
-- **QR version is exact for EC level L only** (the default, documented level). M/Q/H use the
-  standard capacity ratios and are labelled with `≈`.
-- **Audio channel is not implemented.** No ggwave binding exists for React Native yet. The Send
-  screen shows the selector and explains the state honestly rather than pretending. Planned for
-  Phase 2.
+## What changed in this port
 
-## What this port changes
+Native barcode scanning (ML Kit on Android, AVFoundation on iOS) takes the place of the web version's canvas plus jsQR polling loop. Native camera access also doesn't need a secure context, so there's none of the HTTPS or certificate workaround the web version needed.
 
-Native barcode scanning (ML Kit on Android, AVFoundation on iOS) replaces the web version's canvas
-+ jsQR polling loop. Native camera access also needs no secure context — there's no HTTPS or
-certificate workaround required at all here.
-
-One consequence worth knowing for benchmark comparisons: the platform scanner hands over already-decoded
-symbols, not raw frames. So there's no receiver-side processing loss to separate from channel loss
-(per-pass loss is pure channel loss) — but raw camera frame count also isn't observable. Use
-[`react-native-vision-camera`](https://github.com/mrousavy/react-native-vision-camera)'s frame
-processor if you need that for a like-for-like comparison against the web numbers.
+One thing worth knowing if you're comparing benchmarks: the platform scanner only hands you already decoded symbols, not raw frames. That means there's no receiver side processing loss to separate out from channel loss (whatever loss you see per pass is purely channel loss), but you also can't see the raw frame count. If you need that for an apples to apples comparison against the web numbers, use react-native-vision-camera's frame processor instead.
 
 ## Testing
 
@@ -219,22 +119,17 @@ processor if you need that for a like-for-like comparison against the web number
 npm test
 ```
 
-`src/protocol.test.ts` is the full self-check and needs no device: RFC 9285 test vectors, CRC
-check values, exact header byte layout, all 8 rejection categories, and shuffle determinism are
-all asserted there.
+`src/protocol.test.ts` is the full self check and doesn't need a device at all. It covers RFC 9285 test vectors, CRC check values, the exact header byte layout, all eight rejection categories, and shuffle determinism.
 
 ## Roadmap
 
-- [ ] Audio/ultrasonic channel (ggwave binding for React Native) — Phase 2
-- [ ] End-to-end file digest on top of per-chunk CRC-32
-- [ ] Parity frame types (reserved range `2`–`15`) for forward error correction
+- Audio channel using a ggwave binding for React Native (phase two)
+- An end to end file digest on top of the per chunk CRC 32
+- Parity frame types in the reserved range (2 through 15) for forward error correction
 
 ## Contributing
 
-Issues and pull requests are welcome. If you're changing anything in `src/protocol.ts`, add or
-update a case in `src/protocol.test.ts` alongside it — the wire format is the contract this whole
-project (and its interoperability with the web app) depends on, so it's covered byte-for-byte on
-purpose.
+Issues and PRs are welcome. If you touch anything in `src/protocol.ts`, add or update the matching case in `src/protocol.test.ts` too. The wire format is what makes this whole thing, and its compatibility with the web app, work, so it's tested byte for byte on purpose.
 
 ## License
 
