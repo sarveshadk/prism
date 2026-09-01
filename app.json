@@ -6,14 +6,14 @@
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "icon": "./assets/prism.svg",
+    "icon": "./assets/prism.png",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "app.prism.rn",
       "icon": {
         "light": "./assets/prism.svg",
         "dark": "./assets/prism.svg",
-        "tinted": "./assets/prism.svg"  
+        "tinted": "./assets/prism.svg"
       },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
@@ -32,8 +32,8 @@
       ],
       "edgeToEdgeEnabled": true,
       "adaptiveIcon": {
-        "foregroundImage": "./assets/prism.svg",
-        "monochromeImage": "./assets/prism.svg",
+        "foregroundImage": "./assets/prism-icon.png",
+        "monochromeImage": "./assets/prism.png",
         "backgroundColor": "#FF4B3E"
       }
     },
@@ -53,10 +53,11 @@
           "dark": {
             "backgroundColor": "#0F0F0F"
           },
-          "image": "./assets/prism.svg",
+          "image": "./assets/prism-icon.png",
           "imageWidth": 160
         }
-      ]
+      ],
+      "expo-font"
     ],
     "extra": {
       "eas": {
