@@ -52,9 +52,7 @@
           "backgroundColor": "#F7F6F1",
           "dark": {
             "backgroundColor": "#0F0F0F"
-          },
-          "image": "./assets/prism-icon.png",
-          "imageWidth": 160
+          }
         }
       ],
       "expo-font"

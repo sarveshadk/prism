@@ -18,15 +18,7 @@ import { useTheme } from './theme';
 const { width: SCREEN_W } = Dimensions.get('window');
 const BAR_WIDTH = SCREEN_W * 0.38;
 
-/**
- * Bootloader splash screen matching the Figma reference:
- * - Cream (#F7F6F1) / dark (#0F0F0F) background fills the entire screen
- * - "Prism" wordmark fades + scales in from center
- * - A thin progress bar appears below the wordmark and fills left-to-right
- * - Once the bar completes, the whole screen fades out, revealing the app
- *
- * Total duration: ~2.4s
- */
+
 export function Bootloader({ onFinish }: { onFinish: () => void }) {
   const c = useTheme();
 
